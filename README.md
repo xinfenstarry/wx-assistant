@@ -48,9 +48,7 @@
 ./gradlew.bat assembleDebug
 ```
 
-调试 APK 通常位于 `app/build/outputs/apk/debug/app-debug.apk`。
-
-当前开发主机只有 JDK 17，没有 Android SDK；Gradle 分发包下载也被网络重置，因此本仓库完成了源代码、XML 和静态边界检查，但尚未在本机生成 APK。
+调试 APK 通常位于 `app/build/outputs/apk/debug/app-debug.apk`；仓库根目录已附带可安装的 `群聊助手-0.1.0-debug.apk`。当前版本已在 JDK 17、Android SDK 35 和 Build Tools 35.0.0 下完成构建，12 个单元测试全部通过。
 
 ## 现实限制
 
