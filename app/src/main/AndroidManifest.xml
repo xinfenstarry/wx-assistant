@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <permission
+        android:name="com.xinfen.wxassistant.permission.INTERNAL_WECHAT_CAPTURE"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="com.xinfen.wxassistant.permission.INTERNAL_WECHAT_CAPTURE" />
+
+    <queries>
+        <package android:name="com.tencent.mm" />
+        <package android:name="com.openai.chatgpt" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.WxAssistant">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".data.CaptureReceiver"
+            android:exported="false"
+            android:permission="com.xinfen.wxassistant.permission.INTERNAL_WECHAT_CAPTURE">
+            <intent-filter>
+                <action android:name="com.xinfen.wxassistant.action.GROUP_NOTIFICATION_CAPTURED" />
+                <action android:name="com.xinfen.wxassistant.action.PINNED_GROUPS_DISCOVERED" />
+                <action android:name="com.xinfen.wxassistant.action.GROUP_MESSAGES_CAPTURED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".service.WeChatNotificationListenerService"
+            android:exported="true"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.WeChatReadOnlyAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config" />
+        </service>
+    </application>
+
+</manifest>

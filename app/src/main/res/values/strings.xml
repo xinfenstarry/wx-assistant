@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">群聊助手</string>
+    <string name="notification_listener_label">群聊通知只读采集</string>
+    <string name="accessibility_service_label">微信置顶群只读采集</string>
+    <string name="accessibility_service_description">仅在用户发起扫描时读取已选择的微信置顶群可见消息；不会输入、回复或发送微信消息。</string>
+</resources>
