@@ -6,7 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ChatGptPromptComposerTest {
+class DeepSeekPromptComposerTest {
     private val start = LocalDateTime.of(2026, 9, 1, 8, 0)
     private val end = LocalDateTime.of(2026, 9, 1, 20, 0)
     private val projectGroup = GroupChatRef("project", "项目群")
@@ -18,7 +18,7 @@ class ChatGptPromptComposerTest {
             message("2", "other", "闲聊群", "李四", "午饭吃什么", 10),
         )
 
-        val result = ChatGptPromptComposer().compose(messages, listOf(projectGroup), start, end)
+        val result = DeepSeekPromptComposer().compose(messages, listOf(projectGroup), start, end)
 
         assertEquals(1, result.totalEligibleMessageCount)
         assertEquals(1, result.includedMessageCount)
@@ -43,7 +43,7 @@ class ChatGptPromptComposerTest {
                 minute = index,
             )
         }
-        val composer = ChatGptPromptComposer(maxCharacters = 1_200)
+        val composer = DeepSeekPromptComposer(maxCharacters = 1_200)
 
         val result = composer.compose(messages, listOf(projectGroup), start, end)
 

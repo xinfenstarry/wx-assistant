@@ -76,7 +76,7 @@ data class SummaryDraft(
     val bullets: List<String>,
 )
 
-data class ImportedChatGptResult(
+data class ImportedDeepSeekResult(
     val exchangeToken: String,
     val summaries: List<SummaryDraft>,
     val planItems: List<PlanDraft>,

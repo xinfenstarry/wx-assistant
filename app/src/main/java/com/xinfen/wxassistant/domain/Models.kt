@@ -49,7 +49,7 @@ enum class TaskConfidence(val rank: Int, val displayName: String) {
     HIGH(3, "高"),
 }
 
-/** A task extracted locally for preview/fallback; ChatGPT remains the final summarizer. */
+/** A task extracted locally for diagnostics; DeepSeek remains the final organizer. */
 data class ExtractedTask(
     val id: String,
     val groupId: String,
@@ -73,7 +73,7 @@ data class ExtractedTask(
     }
 }
 
-/** Deterministic local preview used when ChatGPT is unavailable. */
+/** Deterministic local preview used only when inspecting captured data locally. */
 data class LocalGroupSummary(
     val groupId: String,
     val groupName: String,

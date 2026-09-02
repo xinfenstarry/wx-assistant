@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <permission
         android:name="com.xinfen.wxassistant.permission.INTERNAL_WECHAT_CAPTURE"
@@ -11,13 +12,13 @@
 
     <queries>
         <package android:name="com.tencent.mm" />
-        <package android:name="com.openai.chatgpt" />
     </queries>
 
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.WxAssistant">
         <activity
             android:name=".MainActivity"

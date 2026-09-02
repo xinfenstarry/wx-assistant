@@ -256,12 +256,12 @@ class LocalStore private constructor(context: Context) {
     }
 
     /**
-     * Reconciles one user-shared ChatGPT result with the existing plan in a transaction.
+     * Reconciles one DeepSeek result with the existing plan in a transaction.
      * Missing items are never deleted: cancellation/completion must be explicit in the import.
      */
     @Synchronized
-    fun mergeChatGptResult(
-        result: ImportedChatGptResult,
+    fun mergeDeepSeekResult(
+        result: ImportedDeepSeekResult,
         importedAt: Long = System.currentTimeMillis(),
     ): MergeReport {
         val db = database.writableDatabase

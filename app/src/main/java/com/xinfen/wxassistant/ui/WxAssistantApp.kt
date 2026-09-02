@@ -3,7 +3,6 @@ package com.xinfen.wxassistant.ui
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -60,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.core.app.NotificationManagerCompat
 import com.xinfen.wxassistant.data.GroupConfig
 import com.xinfen.wxassistant.data.LocalStore
@@ -69,14 +69,15 @@ import com.xinfen.wxassistant.data.PlanItemStatus
 import com.xinfen.wxassistant.data.SavedSummary
 import com.xinfen.wxassistant.data.StoredMessage
 import com.xinfen.wxassistant.data.UserPreferences
-import com.xinfen.wxassistant.domain.ChatGptPromptComposer
+import com.xinfen.wxassistant.domain.DeepSeekPromptComposer
 import com.xinfen.wxassistant.domain.GroupChatRef
 import com.xinfen.wxassistant.domain.GroupMessage
 import com.xinfen.wxassistant.domain.MessageSource
-import com.xinfen.wxassistant.integration.ChatGptHandoff
-import com.xinfen.wxassistant.integration.ChatGptResultParser
+import com.xinfen.wxassistant.integration.DeepSeekApiClient
+import com.xinfen.wxassistant.integration.DeepSeekApiException
+import com.xinfen.wxassistant.integration.DeepSeekResultParser
 import com.xinfen.wxassistant.integration.ResultParseException
-import com.xinfen.wxassistant.integration.StructuredChatGptPrompt
+import com.xinfen.wxassistant.integration.StructuredDeepSeekPrompt
 import com.xinfen.wxassistant.notification.PlanChangeNotifier
 import com.xinfen.wxassistant.service.WeChatCaptureContract
 import kotlinx.coroutines.delay
@@ -117,9 +118,9 @@ private fun DisclosureScreen(onAccept: () -> Unit) {
             Spacer(Modifier.height(24.dp))
             DisclosurePoint("读取范围", "通知使用权读取微信通知；无障碍仅读取你选择的置顶群在当前屏幕可见的文字。")
             DisclosurePoint("严格只读微信", "不会在微信输入、回复、粘贴或发送任何消息。扫描只会打开已选会话、读取并返回。")
-            DisclosurePoint("ChatGPT 交接", "消息先在本机整理；只有你点击“交给 ChatGPT”时，所选内容才通过系统分享交给 ChatGPT。")
-            DisclosurePoint("结果回流", "在 ChatGPT 中把完整回复分享回本 App 后，App 会自动更新摘要和计划，并对重要变更发通知。")
-            DisclosurePoint("本地控制", "未选中的聊天不落库；群消息默认保留 30 天，摘要与计划保留到更新或清空。本 App 自身不申请联网权限。")
+            DisclosurePoint("DeepSeek 整理", "你保存自己的 DeepSeek API Key 后，所选群消息会通过 HTTPS 发送给 DeepSeek 的 deepseek-v4-flash 生成摘要和计划。")
+            DisclosurePoint("Key 安全", "API Key 只用 Android Keystore 加密保存在本机，不写入日志，也不会上传到其他服务。")
+            DisclosurePoint("本地控制", "未选中的聊天不落库；群消息默认保留 30 天，摘要与计划保留到更新或清空。")
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -158,7 +159,9 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
     var plans by remember { mutableStateOf<List<PlanItem>>(emptyList()) }
     var notificationAccess by remember { mutableStateOf(false) }
     var accessibilityAccess by remember { mutableStateOf(false) }
-    var chatGptInstalled by remember { mutableStateOf(false) }
+    var deepSeekApiKey by remember { mutableStateOf(preferences.deepSeekApiKey) }
+    var hasSavedDeepSeekKey by remember { mutableStateOf(deepSeekApiKey.isNotBlank()) }
+    var isOrganizing by remember { mutableStateOf(false) }
     var rangeHours by remember { mutableIntStateOf(72) }
     var manualGroup by remember { mutableStateOf("") }
     var previewPrompt by remember { mutableStateOf<String?>(null) }
@@ -173,7 +176,6 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
         plans = store.planItems()
         notificationAccess = hasNotificationAccess(context)
         accessibilityAccess = hasAccessibilityAccess(context)
-        chatGptInstalled = ChatGptHandoff.isChatGptInstalled(context)
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -183,13 +185,13 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
         refresh()
     }
 
-    suspend fun importChatGptResult(shared: String) {
+    suspend fun importDeepSeekResult(shared: String) {
         try {
-            val parsed = ChatGptResultParser().parse(shared)
-            if (!preferences.isValidChatGptExchange(parsed.exchangeToken)) {
-                throw ResultParseException("结果不是由本 App 最近生成的提示词产生，或已超过 7 天")
+            val parsed = DeepSeekResultParser().parse(shared)
+            if (!preferences.isValidDeepSeekExchange(parsed.exchangeToken)) {
+                throw ResultParseException("结果不是由本 App 最近生成的 DeepSeek 提示词产生，或已超过 7 天")
             }
-            val report = store.mergeChatGptResult(parsed)
+            val report = store.mergeDeepSeekResult(parsed)
             refresh()
             PlanChangeNotifier.notifyPending(context)
             val important = report.changes.count {
@@ -197,14 +199,14 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
             }
             snackbar.showSnackbar(
                 if (report.summariesUpdated == 0 && report.planItemsUpdated == 0) {
-                    "没有导入：ChatGPT 返回的群名不在已选择列表"
+                    "没有导入：DeepSeek 返回的群名不在已选择列表"
                 } else {
-                    preferences.consumeChatGptExchange(parsed.exchangeToken)
+                    preferences.consumeDeepSeekExchange(parsed.exchangeToken)
                     "已导入 ${report.summariesUpdated} 份摘要、${report.planItemsUpdated} 项计划；发现 $important 项重要变更"
                 },
             )
         } catch (error: ResultParseException) {
-            snackbar.showSnackbar(error.message ?: "无法解析 ChatGPT 结果")
+            snackbar.showSnackbar(error.message ?: "无法解析 DeepSeek 结果")
         }
     }
 
@@ -223,7 +225,7 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
     LaunchedEffect(incomingSharedText) {
         val shared = incomingSharedText ?: return@LaunchedEffect
         try {
-            importChatGptResult(shared)
+            importDeepSeekResult(shared)
         } finally {
             onSharedTextHandled()
         }
@@ -239,7 +241,7 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
                 title = {
                     Column {
                         Text("群聊助手", fontWeight = FontWeight.Bold)
-                        Text("微信只读 · ChatGPT 总结", style = MaterialTheme.typography.labelMedium)
+                        Text("微信只读 · DeepSeek 整理", style = MaterialTheme.typography.labelMedium)
                     }
                 },
             )
@@ -283,7 +285,23 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
                     )
                 }
             }
-            item { SectionTitle("2. 选择微信群", "未选中的会话不会保存消息，也不会交给 ChatGPT") }
+            item {
+                DeepSeekConfigCard(
+                    apiKey = deepSeekApiKey,
+                    hasSavedKey = hasSavedDeepSeekKey,
+                    onApiKeyChange = { deepSeekApiKey = it.take(240) },
+                    onSave = {
+                        preferences.deepSeekApiKey = deepSeekApiKey
+                        hasSavedDeepSeekKey = deepSeekApiKey.isNotBlank()
+                        scope.launch {
+                            snackbar.showSnackbar(
+                                if (hasSavedDeepSeekKey) "DeepSeek API Key 已加密保存" else "已清除 DeepSeek API Key",
+                            )
+                        }
+                    },
+                )
+            }
+            item { SectionTitle("2. 选择微信群", "未选中的会话不会保存消息，也不会发送给 DeepSeek") }
             if (groups.isEmpty()) {
                 item { EmptyCard("尚未发现群聊。可先输入准确群名，或开启无障碍后在微信会话列表点“发现置顶群”。") }
             } else {
@@ -346,13 +364,13 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
                     }
                 }
             }
-            item { SectionTitle("3. 交给 ChatGPT", "选时间范围，预览后通过系统分享进入手机 ChatGPT") }
+            item { SectionTitle("3. 由 DeepSeek 整理", "选时间范围，确认后直接调用 deepseek-v4-flash") }
             item {
                 Card {
                     Column(Modifier.padding(16.dp)) {
                         Text(
-                            if (chatGptInstalled) "已检测到 ChatGPT" else "未检测到 ChatGPT，将打开系统分享选择器",
-                            color = if (chatGptInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            if (hasSavedDeepSeekKey) "已配置 DeepSeek API Key" else "请先在上方保存 DeepSeek API Key",
+                            color = if (hasSavedDeepSeekKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.labelLarge,
                         )
                         Row(
@@ -372,19 +390,19 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
                         Button(
                             onClick = {
                                 runCatching {
-                                    val token = preferences.beginChatGptExchange()
-                                    buildPrompt(messages, selected, plans, rangeHours, token)
+                                    val token = preferences.beginDeepSeekExchange()
+                                    buildDeepSeekPrompt(messages, selected, plans, rangeHours, token)
                                 }
                                     .onSuccess { previewPrompt = it }
                                     .onFailure {
                                         scope.launch { snackbar.showSnackbar(it.message ?: "无法生成提示词") }
                                     }
                             },
-                            enabled = selected.isNotEmpty(),
+                            enabled = selected.isNotEmpty() && hasSavedDeepSeekKey && !isOrganizing,
                             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                        ) { Text("预览并交给 ChatGPT") }
+                        ) { Text(if (isOrganizing) "DeepSeek 整理中…" else "预览并由 DeepSeek 整理") }
                         Text(
-                            "ChatGPT 回答后：点回答的“分享” → 选择“群聊助手”。App 会自动更新下方摘要和计划表。",
+                            "确认后 App 会直接调用 deepseek-v4-flash，返回结果会自动更新下方摘要和计划表。不会发送到微信。",
                             modifier = Modifier.padding(top = 10.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
@@ -392,15 +410,15 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
                         OutlinedButton(
                             onClick = { showManualImport = true },
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        ) { Text("粘贴导入 ChatGPT 完整回复") }
+                        ) { Text("粘贴导入 DeepSeek 完整回复") }
                     }
                 }
             }
-            item { SectionTitle("摘要", if (summaries.isEmpty()) "等待从 ChatGPT 分享回结果" else "最近一次导入") }
-            if (summaries.isEmpty()) item { EmptyCard("还没有 ChatGPT 摘要。") }
+            item { SectionTitle("摘要", if (summaries.isEmpty()) "等待 DeepSeek 整理结果" else "最近一次 DeepSeek 整理") }
+            if (summaries.isEmpty()) item { EmptyCard("还没有 DeepSeek 摘要。") }
             else items(summaries, key = { it.groupName }) { SummaryCard(it) }
             item { SectionTitle("计划表", "取消、完成与截止变化会覆盖原条目，不会因一次遗漏而删除") }
-            if (plans.isEmpty()) item { EmptyCard("还没有计划项。导入 ChatGPT 结果后会自动生成。") }
+            if (plans.isEmpty()) item { EmptyCard("还没有计划项。由 DeepSeek 整理后会自动生成。") }
             else items(plans, key = { it.stableKey }) { PlanRow(it) }
             item { SectionTitle("最近采集", "本机预览，仅显示最近 8 条") }
             items(messages.takeLast(8).asReversed(), key = { it.id }) { MessageRow(it) }
@@ -416,10 +434,10 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
     previewPrompt?.let { prompt ->
         AlertDialog(
             onDismissRequest = { previewPrompt = null },
-            title = { Text("交给 ChatGPT 前确认") },
+            title = { Text("调用 DeepSeek 前确认") },
             text = {
                 Column {
-                    Text("这会把已选群在所选时间内的消息和当前计划分享给 ChatGPT。不会发送到微信。")
+                    Text("这会把已选群在所选时间内的消息和当前计划通过 HTTPS 发送给 DeepSeek。不会发送到微信。")
                     Spacer(Modifier.height(8.dp))
                     Text(
                         prompt.take(1_500) + if (prompt.length > 1_500) "\n…（预览已截断）" else "",
@@ -432,13 +450,23 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
             confirmButton = {
                 Button(onClick = {
                     previewPrompt = null
-                    try {
-                        context.startActivity(ChatGptHandoff.createShareIntent(context, prompt))
-                        preferences.lastChatGptHandoffAt = System.currentTimeMillis()
-                    } catch (_: ActivityNotFoundException) {
-                        scope.launch { snackbar.showSnackbar("没有可接收文本的应用") }
+                    if (!hasSavedDeepSeekKey) {
+                        scope.launch { snackbar.showSnackbar("请先保存 DeepSeek API Key") }
+                    } else {
+                        isOrganizing = true
+                        scope.launch {
+                            try {
+                                val response = DeepSeekApiClient(preferences.deepSeekApiKey).organize(prompt)
+                                importDeepSeekResult(response)
+                                preferences.lastDeepSeekRunAt = System.currentTimeMillis()
+                            } catch (error: DeepSeekApiException) {
+                                snackbar.showSnackbar(error.message ?: "DeepSeek 整理失败")
+                            } finally {
+                                isOrganizing = false
+                            }
+                        }
                     }
-                }) { Text("交给 ChatGPT") }
+                }) { Text("调用 DeepSeek 整理") }
             },
             dismissButton = { TextButton(onClick = { previewPrompt = null }) { Text("取消") } },
         )
@@ -448,7 +476,7 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("清空全部本地数据？") },
-            text = { Text("将删除群白名单、采集消息、摘要、计划和变更记录，无法恢复。不会删除微信或 ChatGPT 中的内容。") },
+            text = { Text("将删除群白名单、采集消息、摘要、计划和变更记录，无法恢复。不会删除微信或 DeepSeek 中的内容。") },
             confirmButton = {
                 Button(onClick = {
                     store.deleteAllCapturedData()
@@ -464,7 +492,7 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
     if (showManualImport) {
         AlertDialog(
             onDismissRequest = { showManualImport = false },
-            title = { Text("导入 ChatGPT 回复") },
+            title = { Text("导入 DeepSeek 回复") },
             text = {
                 OutlinedTextField(
                     value = manualImportText,
@@ -481,7 +509,7 @@ private fun DashboardScreen(incomingSharedText: String?, onSharedTextHandled: ()
                         val text = manualImportText
                         showManualImport = false
                         manualImportText = ""
-                        scope.launch { importChatGptResult(text) }
+                        scope.launch { importDeepSeekResult(text) }
                     },
                     enabled = manualImportText.isNotBlank(),
                 ) { Text("导入并更新计划") }
@@ -497,9 +525,54 @@ private fun ReadOnlyBanner() {
         Column(Modifier.padding(16.dp)) {
             Text("微信严格只读", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Text(
-                "代码中没有微信文本输入、粘贴或发送动作。ChatGPT 结果通过你主动分享回 App。",
+                "代码中没有微信文本输入、粘贴或发送动作。所有摘要和计划由你配置的 DeepSeek 生成。",
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
+        }
+    }
+}
+
+@Composable
+private fun DeepSeekConfigCard(
+    apiKey: String,
+    hasSavedKey: Boolean,
+    onApiKeyChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Card {
+        Column(Modifier.padding(16.dp)) {
+            Text("DeepSeek API 设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "固定使用 deepseek-v4-flash。Key 只在本机加密保存，并仅发送到 api.deepseek.com。",
+                modifier = Modifier.padding(top = 4.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = onApiKeyChange,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                label = { Text("DeepSeek API Key") },
+                placeholder = { Text("sk-…") },
+                supportingText = { Text("不会写入日志或提交到其他服务") },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (hasSavedKey) "已保存（加密）" else "尚未保存",
+                    color = if (hasSavedKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Spacer(Modifier.weight(1f))
+                Button(
+                    onClick = onSave,
+                    enabled = hasSavedKey || apiKey.isNotBlank(),
+                ) { Text(if (apiKey.isBlank() && hasSavedKey) "清除 Key" else "保存 Key") }
+            }
         }
     }
 }
@@ -632,7 +705,7 @@ private fun EmptyCard(text: String) {
     }
 }
 
-private fun buildPrompt(
+private fun buildDeepSeekPrompt(
     storedMessages: List<StoredMessage>,
     selectedGroups: List<GroupConfig>,
     currentPlan: List<PlanItem>,
@@ -660,13 +733,13 @@ private fun buildPrompt(
                 },
             )
         }
-    val base = ChatGptPromptComposer().compose(
+    val base = DeepSeekPromptComposer().compose(
         messages = messages,
         selectedGroups = selectedGroups.map { GroupChatRef(it.name, it.name) },
         rangeStart = start,
         rangeEnd = end,
     ).text
-    return StructuredChatGptPrompt.build(
+    return StructuredDeepSeekPrompt.build(
         basePrompt = base,
         currentPlan = currentPlan.filter { it.groupName in names },
         exchangeToken = exchangeToken,

@@ -1,6 +1,6 @@
 package com.xinfen.wxassistant.integration
 
-import com.xinfen.wxassistant.data.ImportedChatGptResult
+import com.xinfen.wxassistant.data.ImportedDeepSeekResult
 import com.xinfen.wxassistant.data.PlanConfidence
 import com.xinfen.wxassistant.data.PlanDraft
 import com.xinfen.wxassistant.data.PlanItem
@@ -17,7 +17,7 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /** Adds a stable response schema and the current plan to the human-readable summary prompt. */
-object StructuredChatGptPrompt {
+object StructuredDeepSeekPrompt {
     fun build(basePrompt: String, currentPlan: List<PlanItem>, exchangeToken: String): String {
         require(EXCHANGE_TOKEN.matches(exchangeToken)) { "Invalid exchange token" }
         val planJson = JSONArray().apply {
@@ -87,27 +87,27 @@ object StructuredChatGptPrompt {
     )
 }
 
-class ChatGptResultParser(
+class DeepSeekResultParser(
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
-    fun parse(sharedText: String, now: Long = System.currentTimeMillis()): ImportedChatGptResult {
+    fun parse(sharedText: String, now: Long = System.currentTimeMillis()): ImportedDeepSeekResult {
         val raw = sharedText.trim()
         if (raw.isBlank()) throw ResultParseException("分享内容为空")
         if (raw.length > MAX_RAW_RESPONSE_CHARS) {
-            throw ResultParseException("分享内容过长，请只导入本次 ChatGPT 的完整回复")
+            throw ResultParseException("内容过长，请只导入本次 DeepSeek 的完整回复")
         }
         val jsonText = extractJson(raw)
         val root = try {
             JSONObject(jsonText)
         } catch (error: JSONException) {
-            throw ResultParseException("没有找到有效的 ChatGPT 结构化结果", error)
+            throw ResultParseException("没有找到有效的 DeepSeek 结构化结果", error)
         }
         if (root.optInt("schemaVersion", -1) != SCHEMA_VERSION) {
             throw ResultParseException("结果版本不受支持，请使用 App 生成的新提示词重新总结")
         }
         val exchangeToken = root.nullableString("exchangeToken")
             ?.takeIf { EXCHANGE_TOKEN.matches(it) }
-            ?: throw ResultParseException("结果缺少有效的交换凭证，请使用 App 生成的提示词重新总结")
+            ?: throw ResultParseException("结果缺少有效的交换凭证，请使用 App 生成的 DeepSeek 提示词重新整理")
 
         val summaries = mutableListOf<SummaryDraft>()
         val planItems = mutableListOf<PlanDraft>()
@@ -152,7 +152,7 @@ class ChatGptResultParser(
             throw ResultParseException("结构化结果中没有可导入的摘要或计划")
         }
         val generatedAt = parseDeadline(root.nullableString("generatedAt")) ?: now
-        return ImportedChatGptResult(
+        return ImportedDeepSeekResult(
             exchangeToken = exchangeToken,
             summaries = summaries,
             planItems = planItems,
@@ -166,7 +166,7 @@ class ChatGptResultParser(
         val start = text.indexOf('{')
         val end = text.lastIndexOf('}')
         if (start >= 0 && end > start) return text.substring(start, end + 1)
-        throw ResultParseException("未找到 JSON 结果，请在 ChatGPT 中分享完整回复")
+        throw ResultParseException("未找到 JSON 结果，请粘贴 DeepSeek 的完整回复")
     }
 
     private fun parseSummary(value: Any?): List<String> = when (value) {

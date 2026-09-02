@@ -3,8 +3,8 @@ package com.xinfen.wxassistant.domain
 import java.time.LocalDateTime
 
 /**
- * Small deterministic preview/fallback summarizer. The normal final summary is composed by
- * [ChatGptPromptComposer] and sent to the user's ChatGPT conversation.
+ * Small deterministic local preview. The final summary is composed by [DeepSeekPromptComposer]
+ * and sent to the user's configured DeepSeek model.
  */
 class LocalMessageSummarizer(
     private val taskRuleEngine: LocalTaskRuleEngine = LocalTaskRuleEngine(),

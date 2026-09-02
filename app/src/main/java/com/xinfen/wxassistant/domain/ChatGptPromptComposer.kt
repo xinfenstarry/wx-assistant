@@ -4,10 +4,10 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Builds the text sent to the ChatGPT mobile conversation. It deliberately performs no network
- * or Android work. The Android UI hands [ComposedPrompt.text] to ChatGPT through ACTION_SEND.
+ * Builds the analysis prompt sent to DeepSeek. It deliberately performs no network or Android
+ * work; the API client owns the request and response transport.
  */
-class ChatGptPromptComposer(
+class DeepSeekPromptComposer(
     private val maxCharacters: Int = DEFAULT_MAX_CHARACTERS,
 ) {
     init {

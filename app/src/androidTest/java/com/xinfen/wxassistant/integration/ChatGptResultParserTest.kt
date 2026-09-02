@@ -7,7 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ChatGptResultParserTest {
+class DeepSeekResultParserTest {
     @Test
     fun parsesSummaryAndAbsoluteDeadline() {
         val response = """
@@ -37,7 +37,7 @@ class ChatGptResultParserTest {
             ```
         """.trimIndent()
 
-        val result = ChatGptResultParser(ZoneId.of("Asia/Shanghai")).parse(response)
+        val result = DeepSeekResultParser(ZoneId.of("Asia/Shanghai")).parse(response)
 
         assertEquals("高数群", result.summaries.single().groupName)
         assertEquals(PlanItemStatus.ACTIVE, result.planItems.single().status)
@@ -73,7 +73,7 @@ class ChatGptResultParserTest {
             ```
         """.trimIndent()
 
-        val result = ChatGptResultParser(ZoneId.of("Asia/Shanghai")).parse(response)
+        val result = DeepSeekResultParser(ZoneId.of("Asia/Shanghai")).parse(response)
 
         assertTrue(result.planItems.isEmpty())
         assertEquals(1, result.summaries.size)
